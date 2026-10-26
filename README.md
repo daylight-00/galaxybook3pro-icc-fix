@@ -32,7 +32,7 @@ than it is, so ACM lowers blue by about 20%. Details: [docs/root-cause.md](docs/
    [latest release](../../releases/latest) into the same folder.
 
    SHA-256 of `SDC4185_D65.icm`:
-   `ce8b37bd99eee5a6a9fe3ba61b862edaec0e44493fbd0955a1495f875240e033`
+   `14f591c880b1e0932c578a22213d19e7c6ccdbb72a34d7ecf6021717eded24d9`
 
 2. In that folder, run:
 
@@ -40,8 +40,9 @@ than it is, so ACM lowers blue by about 20%. Details: [docs/root-cause.md](docs/
    powershell -ExecutionPolicy Bypass -File .\fix.ps1 -Apply
    ```
 
-   This copies the profile to `%WINDIR%\System32\spool\drivers\color` and makes it the default SDR and
-   advanced color (ACM) profile for the current user. Administrator rights are not required.
+   This copies the profile to `%WINDIR%\System32\spool\drivers\color` and makes it the default profile
+   for SDR (including ACM) and HDR for the current user. Administrator rights are not required.
+   To upgrade from v1.0.0, run the same command with the new files.
 
 3. Check the result at any time:
 
@@ -51,10 +52,11 @@ than it is, so ACM lowers blue by about 20%. Details: [docs/root-cause.md](docs/
 
    ```text
    Display           \\.\DISPLAY1 (SDC4185)
-   Auto color mgmt   On
-   Default profile   SDR: SDC4185_D65.icm   ACM: SDC4185_D65.icm
-   Profile tags      SDC4185_D65.icm  v4.3  wtpt (0.9642, 1.0000, 0.8249)  chad: yes  -> OK
+   Color mode        SDR with ACM
+   Default profile   SDR: SDC4185_D65.icm   HDR: SDC4185_D65.icm
+   Profile tags      SDC4185_D65.icm  v4.3  wtpt (0.9642, 1.0000, 0.8249)  chad: yes  MHC2: yes  -> OK
    Windows white     (0.3127, 0.3290)  delta u'v' from D65 = 0.0000  -> OK
+   Windows luminance min 0.0042  peak 565.7  full-frame 400.0 cd/m2
    ```
 
 Browsers such as Edge stay within sRGB under ACM unless a per-app compatibility option is enabled; see
@@ -79,7 +81,8 @@ This removes the `SDC4185_D65.icm` association. Windows falls back to the next a
 ## Documentation
 
 - [Root cause](docs/root-cause.md): how Windows reads the Samsung profile and how this was confirmed.
-- [Profile design](docs/profile-design.md): values, assumptions, and building the profile from source.
+- [Profile design](docs/profile-design.md): values, assumptions, HDR behavior, and building the profile
+  from source.
 - [Wide-gamut content in browsers](docs/wide-gamut-browsers.md): enabling the full gamut in Edge and
   other ICC-managed apps.
 - [Samsung Display Color Profile package](docs/samsung-display-profile.md): what Samsung's installer
