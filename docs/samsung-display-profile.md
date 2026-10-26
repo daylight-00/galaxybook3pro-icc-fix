@@ -51,6 +51,16 @@ emulates sRGB, Display P3 or Adobe RGB. Reviews measured an average ΔE of about
 ([Expert Reviews](https://www.expertreviews.co.uk/technology/laptops/samsung-galaxy-book3-pro-14-inch-review)).
 Only one mode can be active at a time.
 
+The timing fits this role. The package files are dated December 2022, shortly before the Galaxy Book3
+Pro went on sale. Windows 11 22H2 had introduced ACM for SDR displays in October 2022, but only on
+select, specially provisioned displays
+([DirectX blog](https://devblogs.microsoft.com/directx/?p=6990)). It was extended to SDR displays in
+general during 2023 ([Pureinfotech](https://pureinfotech.com/?p=152933)) and is off by default
+([MSI](https://ua.msi.com/faq/faq-11010)). The `MHC2` tag itself has been supported since Windows 10
+version 2004 ([Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/wcs/display-calibration-mhc)).
+At the time, the mode profiles offered desktop-wide color emulation that Windows did not yet provide on
+this hardware.
+
 ## With ACM
 
 ACM composes the desktop in a wide color space and converts each application's content to the panel,
@@ -58,7 +68,7 @@ treating unmanaged content as sRGB. It needs one accurate description of the pan
 emulation modes, so sRGB content and wide-gamut content are each shown correctly at the same time.
 
 ACM takes that description from the default profile. With `SDC4185.icm` it reads the white point as
-x 0.2806, y 0.2958, which causes the yellow cast described in the [README](../README.md).
+x 0.2806, y 0.2958, which causes the warm cast described in the [README](../README.md).
 `SDC4185_D65.icm` describes the same panel with the white point read as D65.
 
 Because `DisplayProfileRegister.exe` sets `SDC4185.icm` as the default when it runs, reinstalling the

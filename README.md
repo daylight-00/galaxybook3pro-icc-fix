@@ -5,13 +5,24 @@ neutral when Windows **Auto Color Management (ACM)** is on.
 
 | Profile | White point Windows uses | Result with ACM on |
 |---|---|---|
-| Samsung `SDC4185.icm` | x 0.2806, y 0.2958 | Yellow cast (white at roughly 5,700 K, estimated) |
+| Samsung `SDC4185.icm` | x 0.2806, y 0.2958 | Warm cast (white at roughly 5,700 K, estimated) |
 | `SDC4185_D65.icm` (this repo) | x 0.3127, y 0.3290 (D65) | Neutral white |
 
 ## Symptom
 
 With Samsung's display profile installed and *Automatically manage color for apps* enabled, the whole
-screen turns noticeably yellow. Turning ACM off removes the cast.
+screen takes on a strong warm cast, most visible on white and gray. Turning ACM off removes it.
+
+## Why it matters
+
+The panel covers a wider gamut than sRGB. Without ACM, Windows passes application colors to the panel
+unchanged, so ordinary sRGB content looks oversaturated. Samsung's screen modes avoid this by limiting
+the whole display to one color space, such as sRGB, at the cost of wide-gamut content.
+
+ACM handles this per application: sRGB content is shown as sRGB and wide-gamut content keeps its range,
+at the same time and without switching modes. For that to work, the display profile has to describe the
+panel correctly. With the Samsung profile, the choice is between a warm cast with ACM on, and
+oversaturated colors or a fixed mode with ACM off. `SDC4185_D65.icm` lets ACM work as intended.
 
 ## Cause
 
@@ -25,10 +36,13 @@ ICC v2.1 matrix/TRC profile containing:
 Windows undoes the `chad` adaptation on the colorants, which recovers the panel primaries, and also on
 `wtpt`. Because `wtpt` is already D65, the second adaptation moves it to x 0.2806, y 0.2958
 (about 9,500 K). This is the white point DXGI reports for the display. ACM then compensates for a panel
-it believes to be bluish and lowers blue by about 20%, so neutral content appears yellow.
+it believes to be bluish and lowers blue by about 20%, so neutral content looks warm.
 
 For display profiles that carry a `chad` tag, the ICC v4 convention is `wtpt` = D50, with the actual
 white given by `chad`.
+
+Without ACM, Windows does not use this profile to transform the desktop, so the `wtpt` value has no
+visible effect. It starts to matter once ACM reads the profile.
 
 <details>
 <summary>How this was confirmed</summary>
