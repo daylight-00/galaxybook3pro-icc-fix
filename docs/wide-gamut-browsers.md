@@ -40,5 +40,6 @@ reference.
 
 ## Tested
 
-Edge on the setup described in the [README](../README.md#scope). Other Chromium-based browsers are
+Edge on the setup described in the [README](../README.md#scope): with the helper on, wide-gamut test
+images render, and ordinary sRGB pages keep the same colors as before. Other Chromium-based browsers are
 expected to behave the same but were not tested; each needs the setting on its own executable.
