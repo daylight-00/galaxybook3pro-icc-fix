@@ -8,10 +8,12 @@
       - primaries : the panel's EDID chromaticity (base block bytes 0x19-0x22)
       - white     : D65, assuming the panel is factory-calibrated to D65 (not measured)
       - tone curve: gamma 2.2 (EDID byte 0x17)
-      - luminance : 400 cd/m2
+      - luminance : the panel's EDID HDR static metadata (peak, full-frame and minimum)
 
     Following ICC.1:2010 (v4.3), the colorants are adapted to the D50 PCS with Bradford,
-    'wtpt' is D50 and the adaptation is stored in 'chad'.
+    'wtpt' is D50 and the adaptation is stored in 'chad'. 'lumi' holds the full-frame luminance.
+    An identity Microsoft 'MHC2' tag carries the minimum and peak luminance that Windows uses in
+    HDR mode.
 
     The output is deterministic: running this script again produces the same bytes.
 
@@ -35,7 +37,8 @@ if (-not $OutFile) { $OutFile = Join-Path $PSScriptRoot '..\dist\SDC4185_D65.icm
 $EdidChromaticity = [byte[]](0x0C, 0xF1, 0xAE, 0x52, 0x3C, 0xB9, 0x23, 0x0C, 0x4E, 0x52)
 $WhiteXY          = @(0.3127, 0.3290)   # D65
 $Gamma            = 2.2
-$Luminance        = 400
+# EDID CTA-861 HDR static metadata code values: max luminance, max frame-average luminance, min luminance.
+$EdidHdrLuminance = [byte[]](0x70, 0x60, 0x07)
 $Description      = 'Samsung AMOLED D65 Profile'
 $Copyright        = 'Copyright (c) 2026 David Hyunyoo Jang. MIT License.'
 $CreationDate     = Get-Date -Year 2026 -Month 10 -Day 26 -Hour 0 -Minute 0 -Second 0
@@ -89,6 +92,16 @@ function ConvertFrom-EdidChromaticity([byte[]]$bytes) {
         Green = @($values[2], $values[3])
         Blue  = @($values[4], $values[5])
         White = @($values[6], $values[7])
+    }
+}
+
+function ConvertFrom-EdidLuminance([byte[]]$codes) {
+    # CTA-861.3: max = 50 * 2^(CV/32); min = max * (CV/255)^2 / 100.
+    $max = 50 * [Math]::Pow(2, $codes[0] / 32.0)
+    return [pscustomobject]@{
+        Peak      = $max
+        FullFrame = 50 * [Math]::Pow(2, $codes[1] / 32.0)
+        Minimum   = $max * [Math]::Pow($codes[2] / 255.0, 2) / 100
     }
 }
 
@@ -167,9 +180,27 @@ function New-MultiLocalizedTextTag([string]$text) {
     return , $s.ToArray()
 }
 
+function New-Mhc2Tag([double]$minLuminance, [double]$peakLuminance) {
+    # Microsoft MHC2 tag with an identity 3x4 matrix and two-point identity LUTs; only the
+    # luminance fields carry information.
+    $s = New-Object System.Collections.Generic.List[byte]
+    $s.AddRange((Get-SignatureBytes 'MHC2')); $s.AddRange([byte[]]::new(4))
+    $s.AddRange((Get-UInt32Bytes 2))                  # LUT entries per channel
+    $s.AddRange((Get-S15Fixed16Bytes $minLuminance))
+    $s.AddRange((Get-S15Fixed16Bytes $peakLuminance))
+    foreach ($o in 36, 84, 100, 116) { $s.AddRange((Get-UInt32Bytes $o)) }   # matrix, red, green, blue LUT offsets
+    foreach ($v in 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0) { $s.AddRange((Get-S15Fixed16Bytes $v)) }
+    for ($c = 0; $c -lt 3; $c++) {
+        $s.AddRange((Get-SignatureBytes 'sf32')); $s.AddRange([byte[]]::new(4))
+        $s.AddRange((Get-S15Fixed16Bytes 0)); $s.AddRange((Get-S15Fixed16Bytes 1))
+    }
+    return , $s.ToArray()
+}
+
 # --- Build -------------------------------------------------------------------
 
 $edid = ConvertFrom-EdidChromaticity $EdidChromaticity
+$luminance = ConvertFrom-EdidLuminance $EdidHdrLuminance
 $d50 = @(0.9642, 1.0, 0.8249)                         # ICC PCS illuminant
 $rgbToXyz = Get-RgbToXyzMatrix $edid.Red $edid.Green $edid.Blue $WhiteXY
 $chad = Get-BradfordMatrix (ConvertTo-XYZ $WhiteXY) $d50
@@ -180,14 +211,15 @@ $tags = @(
     @('desc', (New-MultiLocalizedTextTag $Description)),
     @('cprt', (New-MultiLocalizedTextTag $Copyright)),
     @('wtpt', (New-XyzTag $d50)),
-    @('lumi', (New-XyzTag @(0, $Luminance, 0))),
+    @('lumi', (New-XyzTag @(0, $luminance.FullFrame, 0))),
     @('rXYZ', (New-XyzTag @($colorants[0][0], $colorants[1][0], $colorants[2][0]))),
     @('gXYZ', (New-XyzTag @($colorants[0][1], $colorants[1][1], $colorants[2][1]))),
     @('bXYZ', (New-XyzTag @($colorants[0][2], $colorants[1][2], $colorants[2][2]))),
     @('rTRC', $trc),
     @('gTRC', $trc),
     @('bTRC', $trc),
-    @('chad', (New-S15Fixed16ArrayTag $chad)))
+    @('chad', (New-S15Fixed16ArrayTag $chad)),
+    @('MHC2', (New-Mhc2Tag $luminance.Minimum $luminance.Peak)))
 
 # Lay out tag data after the tag table; identical data (the three TRCs) is stored once.
 $offset = 128 + 4 + 12 * $tags.Count
@@ -234,5 +266,6 @@ $OutFile = [IO.Path]::GetFullPath($OutFile)
 
 'Wrote {0} ({1} bytes)' -f $OutFile, $profile.Length
 '  primaries  R({0:N4}, {1:N4})  G({2:N4}, {3:N4})  B({4:N4}, {5:N4})' -f $edid.Red[0], $edid.Red[1], $edid.Green[0], $edid.Green[1], $edid.Blue[0], $edid.Blue[1]
-'  white      D65 ({0}, {1}), gamma {2}, {3} cd/m2' -f $WhiteXY[0], $WhiteXY[1], $Gamma, $Luminance
+'  white      D65 ({0}, {1}), gamma {2}' -f $WhiteXY[0], $WhiteXY[1], $Gamma
+'  luminance  peak {0:N1}, full-frame {1:N1}, minimum {2:N4} cd/m2' -f $luminance.Peak, $luminance.FullFrame, $luminance.Minimum
 '  profile ID {0}' -f (($id | ForEach-Object { $_.ToString('x2') }) -join '')
