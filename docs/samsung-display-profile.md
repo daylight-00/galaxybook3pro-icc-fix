@@ -68,7 +68,7 @@ treating unmanaged content as sRGB. It needs one accurate description of the pan
 emulation modes, so sRGB content and wide-gamut content are each shown correctly at the same time.
 
 ACM takes that description from the default profile. With `SDC4185.icm` it reads the white point as
-x 0.2806, y 0.2958, which causes the warm cast described in the [README](../README.md).
+x 0.2806, y 0.2958, which causes the warm cast described in [root-cause.md](root-cause.md).
 `SDC4185_D65.icm` describes the same panel with the white point read as D65.
 
 Because `DisplayProfileRegister.exe` sets `SDC4185.icm` as the default when it runs, reinstalling the

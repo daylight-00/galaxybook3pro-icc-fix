@@ -15,62 +15,16 @@ screen takes on a strong warm cast, most visible on white and gray. Turning ACM 
 
 ## Why it matters
 
-The panel covers a wider gamut than sRGB. Without ACM, Windows passes application colors to the panel
-unchanged, so ordinary sRGB content looks oversaturated. Samsung's screen modes avoid this by limiting
-the whole display to one color space, such as sRGB, at the cost of wide-gamut content.
-
-ACM handles this per application: sRGB content is shown as sRGB and wide-gamut content keeps its range,
-at the same time and without switching modes. For that to work, the display profile has to describe the
-panel correctly. With the Samsung profile, the choice is between a warm cast with ACM on, and
-oversaturated colors or a fixed mode with ACM off. `SDC4185_D65.icm` lets ACM work as intended.
+The panel covers a wider gamut than sRGB. Without ACM, ordinary sRGB content looks oversaturated, and
+Samsung's screen modes fix that only by limiting the whole display to one color space. ACM shows sRGB
+and wide-gamut content correctly at the same time, but only if the display profile describes the panel
+correctly. `SDC4185_D65.icm` lets ACM work as intended.
 
 ## Cause
 
-`SDC4185.icm` ("Samsung AMOLED Profile", installed by Samsung's *Display Color Profile* package) is an
-ICC v2.1 matrix/TRC profile containing:
-
-- colorants adapted to the D50 profile connection space,
-- a `chad` tag with the Bradford D65 → D50 adaptation,
-- a `wtpt` tag of **D65**.
-
-Windows undoes the `chad` adaptation on the colorants, which recovers the panel primaries, and also on
-`wtpt`. Because `wtpt` is already D65, the second adaptation moves it to x 0.2806, y 0.2958
-(about 9,500 K). This is the white point DXGI reports for the display. ACM then compensates for a panel
-it believes to be bluish and lowers blue by about 20%, so neutral content looks warm.
-
-For display profiles that carry a `chad` tag, the ICC v4 convention is `wtpt` = D50, with the actual
-white given by `chad`.
-
-Without ACM, Windows does not use this profile to transform the desktop, so the `wtpt` value has no
-visible effect. It starts to matter once ACM reads the profile.
-
-<details>
-<summary>How this was confirmed</summary>
-
-- The DXGI white point (`IDXGIOutput6::GetDesc1`) matches the profile's `wtpt` adapted with the inverse
-  of `chad` to four decimals. The reported primaries match the colorants adapted once.
-- The ACM color transform stored by the Intel driver (`OSLinearColorTransformCsc_Wcg_*`) has row sums of
-  R 0.985, G 0.994, B 0.794 with the Samsung profile, and R 0.976, G 0.992, B 1.007 with
-  `SDC4185_D65.icm`.
-- Making the Samsung profile the default again reproduces the original matrix exactly.
-- Night Light, the gamma ramp (identity), and the Samsung monitor driver were ruled out.
-
-</details>
-
-## The fix
-
-`SDC4185_D65.icm` is an ICC v4.3 profile generated from numbers by
-[`tools/build-icc.ps1`](tools/build-icc.ps1). It contains no data copied from the Samsung file.
-
-| Item | Value | Source |
-|---|---|---|
-| Primaries | R (0.6797, 0.3203), G (0.2373, 0.7227), B (0.1396, 0.0498) | Panel EDID |
-| White point | D65 (0.3127, 0.3290) | Factory calibration target (assumed) |
-| Tone curve | Gamma 2.2 | Panel EDID |
-| Luminance | 400 cd/m² | Panel SDR rating |
-
-The colorants are Bradford-adapted to D50, `wtpt` is D50, and the adaptation is stored in `chad`, as
-ICC v4 specifies. Windows then reads the white point as D65.
+The Samsung profile stores its white point tag (`wtpt`) as D65 alongside a `chad` adaptation tag.
+Windows applies the adaptation to that white point a second time and treats the panel as much bluer
+than it is, so ACM lowers blue by about 20%. Details: [docs/root-cause.md](docs/root-cause.md).
 
 ## Install
 
@@ -103,6 +57,9 @@ ICC v4 specifies. Windows then reads the white point as D65.
    Windows white     (0.3127, 0.3290)  delta u'v' from D65 = 0.0000  -> OK
    ```
 
+Browsers such as Edge stay within sRGB under ACM unless a per-app compatibility option is enabled; see
+[docs/wide-gamut-browsers.md](docs/wide-gamut-browsers.md).
+
 ## Revert
 
 ```powershell
@@ -111,25 +68,22 @@ powershell -ExecutionPolicy Bypass -File .\fix.ps1 -Revert
 
 This removes the `SDC4185_D65.icm` association. Windows falls back to the next associated profile.
 
-## Build from source
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\build-icc.ps1
-```
-
-The output, `dist\SDC4185_D65.icm`, is byte-identical to the release asset (same SHA-256).
-
-## Scope and assumptions
+## Scope
 
 - Tested on one Galaxy Book3 Pro 16" (960XFG, panel `SDC4185`, Intel Iris Xe Graphics) with
   Windows 11 26H1 (build 28000). Other panels are not covered.
-- The D65 white point is an assumption based on the display being factory-calibrated, not a
-  measurement of this unit. The EDID lists a slightly bluer white (0.3047, 0.3213). A profile made with
-  a colorimeter for your own unit will be more accurate.
-- The primaries only affect saturated colors. Gray balance depends on the white point.
+- The D65 white point is assumed from the factory calibration, not measured on this unit.
 - Reinstalling Samsung's *Display Color Profile* package makes `SDC4185.icm` the default again; run
-  `fix.ps1 -Apply` afterwards. See [docs/samsung-display-profile.md](docs/samsung-display-profile.md)
-  for what the package installs.
+  `fix.ps1 -Apply` afterwards.
+
+## Documentation
+
+- [Root cause](docs/root-cause.md): how Windows reads the Samsung profile and how this was confirmed.
+- [Profile design](docs/profile-design.md): values, assumptions, and building the profile from source.
+- [Wide-gamut content in browsers](docs/wide-gamut-browsers.md): enabling the full gamut in Edge and
+  other ICC-managed apps.
+- [Samsung Display Color Profile package](docs/samsung-display-profile.md): what Samsung's installer
+  does and why its screen-mode profiles exist.
 
 ## License
 
