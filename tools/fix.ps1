@@ -28,6 +28,7 @@ $ErrorActionPreference = 'Stop'
 $ProfileName = 'SDC4185_D65.icm'
 $PanelId     = 'SDC4185'
 $ColorDir    = Join-Path $env:WINDIR 'System32\spool\drivers\color'
+$AssociationKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\ICM\ProfileAssociations\Display\{4d36e96e-e325-11ce-bfc1-08002be10318}'
 
 if (-not ('GalaxyBookIcc.Native' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -159,6 +160,33 @@ function Get-DefaultProfile($display, [int]$subType) {
     return [Runtime.InteropServices.Marshal]::PtrToStringUni($name)
 }
 
+function Add-Association($display) {
+    foreach ($advancedColor in $false, $true) {
+        $hr = [GalaxyBookIcc.Native]::ColorProfileAddDisplayAssociation(1, $ProfileName, $display.Adapter, $display.SourceId, $true, $advancedColor)
+        if ($hr -ne 0) { throw ('Associating {0} failed (0x{1:X8}).' -f $ProfileName, $hr) }
+    }
+}
+
+function Remove-Association($display) {
+    foreach ($advancedColor in $false, $true) {
+        [void][GalaxyBookIcc.Native]::ColorProfileRemoveDisplayAssociation(1, $ProfileName, $display.Adapter, $display.SourceId, $advancedColor)
+    }
+}
+
+function Enable-PerUserProfiles {
+    # Windows ignores the current user's associations for a monitor device unless UsePerUserProfiles is 1
+    # ("Use my settings for this device"). Sets it on every device key that lists the profile and returns
+    # $true if any key changed.
+    $changed = $false
+    foreach ($key in Get-ChildItem $AssociationKey -ErrorAction SilentlyContinue) {
+        if (@($key.GetValue('ICMProfile')) -contains $ProfileName -and $key.GetValue('UsePerUserProfiles') -ne 1) {
+            Set-ItemProperty $key.PSPath UsePerUserProfiles 1 -Type DWord
+            $changed = $true
+        }
+    }
+    return $changed
+}
+
 function Get-ProfileTags([string]$path) {
     $b = [IO.File]::ReadAllBytes($path)
     $be32 = { param($o) [uint32]([uint32]$b[$o] * 16777216 + [uint32]$b[$o + 1] * 65536 + [uint32]$b[$o + 2] * 256 + [uint32]$b[$o + 3]) }
@@ -227,6 +255,9 @@ function Show-Status($display) {
         $delta = Get-DeltaUV $c[6] $c[7]
         '{0,-18}({1:N4}, {2:N4})  delta u''v'' from D65 = {3:N4}  -> {4}' -f 'Windows white', $c[6], $c[7], $delta,
             $(if ($delta -lt 0.004) { 'OK' } else { 'not D65' })
+        if ($delta -ge 0.004 -and $active -eq $ProfileName) {
+            '{0,-18}{1}' -f '', "Windows is not using $ProfileName. Run fix.ps1 -Apply again."
+        }
         $luminance = 'min {0:N4}  peak {1:N1}  full-frame {2:N1} cd/m2' -f $c[8], $c[9], $c[10]
         if ($mode -eq 'HDR') {
             # In HDR, Windows reports luminance relative to the current SDR white, which it maps to 80 cd/m2.
@@ -251,27 +282,24 @@ if ($Apply) {
     if (-not $ProfilePath -or -not (Test-Path $ProfilePath)) { throw "$ProfileName not found. Place it next to this script or pass -ProfilePath." }
 
     $installed = Join-Path $ColorDir $ProfileName
-    if (Test-Path $installed) {
-        $contentChanged = (Get-FileHash $ProfilePath).Hash -ne (Get-FileHash $installed).Hash
-        if ($contentChanged) {
-            # Windows keeps the previously loaded profile data until the association changes.
-            foreach ($advancedColor in $false, $true) {
-                [void][GalaxyBookIcc.Native]::ColorProfileRemoveDisplayAssociation(1, $ProfileName, $display.Adapter, $display.SourceId, $advancedColor)
-            }
-        }
-    }
-    Copy-Item $ProfilePath $installed -Force
-    foreach ($advancedColor in $false, $true) {
-        $hr = [GalaxyBookIcc.Native]::ColorProfileAddDisplayAssociation(1, $ProfileName, $display.Adapter, $display.SourceId, $true, $advancedColor)
-        if ($hr -ne 0) { throw ('Associating {0} failed (0x{1:X8}).' -f $ProfileName, $hr) }
+    $installedBefore = Test-Path $installed
+    if ($installedBefore) { $contentChanged = (Get-FileHash $ProfilePath).Hash -ne (Get-FileHash $installed).Hash }
+    # Copy before touching the associations so that a failed copy leaves them as they were.
+    if (-not $installedBefore -or $contentChanged) { Copy-Item $ProfilePath $installed -Force }
+    # Windows keeps the previously loaded profile data until the association changes.
+    if ($contentChanged) { Remove-Association $display }
+    Add-Association $display
+    # A monitor driver install can leave the association on a device key without UsePerUserProfiles.
+    if (Enable-PerUserProfiles) {
+        Remove-Association $display
+        Add-Association $display
+        $contentChanged = $true
     }
     "Applied $ProfileName as the default SDR (including ACM) and HDR profile for the current user."
     ''
 }
 elseif ($Revert) {
-    foreach ($advancedColor in $false, $true) {
-        [void][GalaxyBookIcc.Native]::ColorProfileRemoveDisplayAssociation(1, $ProfileName, $display.Adapter, $display.SourceId, $advancedColor)
-    }
+    Remove-Association $display
     "Removed the $ProfileName association for the current user."
     ''
 }
