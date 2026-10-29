@@ -75,8 +75,10 @@ This removes the `SDC4185_D65.icm` association. Windows falls back to the next a
 - Tested on one Galaxy Book3 Pro 16" (960XFG, panel `SDC4185`, Intel Iris Xe Graphics) with
   Windows 11 26H1 (build 28000). Other panels are not covered.
 - The D65 white point is assumed from the factory calibration, not measured on this unit.
-- Reinstalling Samsung's *Display Color Profile* package makes `SDC4185.icm` the default again; run
-  `fix.ps1 -Apply` afterwards.
+- Reinstalling Samsung's *Display Color Profile* package makes `SDC4185.icm` the default again, and a
+  monitor or graphics driver install can make Windows ignore the association
+  ([details](docs/root-cause.md#when-windows-ignores-the-profile)). If the check shows `not D65`, run
+  `fix.ps1 -Apply` again.
 
 ## Documentation
 
